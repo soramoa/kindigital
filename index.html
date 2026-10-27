@@ -2,7 +2,6 @@
 <html lang="ja">
 <head>
 <meta charset="utf-8">
-<meta name="robots" content="noindex">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Kindle Board</title>
 <style>
@@ -16,6 +15,9 @@
   #detail { font-size: 1.2em; }
   .day { display: block; font-size: 1.3em; padding: 0.35em 0; border-bottom: 2px solid #888; }
   .day b { display: inline-block; width: 4.2em; }
+  #room { font-size: 2.2em; font-weight: bold; margin: 0.15em 0; }
+  #roomDetail { font-size: 1.2em; }
+  .news { display: block; font-size: 1em; padding: 0.4em 0; border-bottom: 2px solid #888; }
   #status { font-size: 0.8em; color: #666; margin-top: 1em; }
 </style>
 </head>
@@ -30,18 +32,29 @@
 </div>
 
 <div class="box">
+  <div class="label">室内</div>
+  <div id="room">--</div>
+  <div id="roomDetail">&nbsp;</div>
+</div>
+
+<div class="box">
   <div class="label">これからの天気</div>
   <div id="days"></div>
+</div>
+
+<div class="box">
+  <div class="label">NHKニュース</div>
+  <div id="newsList"></div>
 </div>
 
 <div id="status"></div>
 
 <script>
 // ===== 設定 =====
-var LAT = 26.2;   // 緯度
-var LON = 127.7;  // 経度
+var LAT = 26.20;   // 緯度（与那原付近）
+var LON = 127.72;  // 経度
 var WEATHER_INTERVAL_MIN = 20; // 天気の更新間隔（分）
-var FIT_DIVISOR = 30;          // 文字サイズの基準（小さくすると全体が大きくなる）
+var FIT_DIVISOR = 24;          // 文字サイズの基準（小さくすると全体が大きくなる）
 // ================
 
 var WEEK = ["日","月","火","水","木","金","土"];
@@ -85,7 +98,7 @@ function tick() {
 function loadWeather() {
   var url = "https://api.open-meteo.com/v1/forecast?latitude=" + LAT + "&longitude=" + LON +
     "&current=temperature_2m,apparent_temperature,relative_humidity_2m,wind_speed_10m,weather_code" +
-    "&daily=weather_code,temperature_2m_max,temperature_2m_min" +
+    "&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max" +
     "&timezone=Asia%2FTokyo&forecast_days=4&wind_speed_unit=ms";
   var xhr = new XMLHttpRequest();
   xhr.open("GET", url, true);
@@ -111,7 +124,8 @@ function loadWeather() {
         var wd = new Date(Date.UTC(+p[0], +p[1] - 1, +p[2])).getUTCDay();
         var name = i === 0 ? "今日" : (i === 1 ? "明日" : (+p[1]) + "/" + (+p[2]) + "(" + WEEK[wd] + ")");
         html += '<span class="day"><b>' + name + "</b>" + wcode(dl.weather_code[i]) + " " +
-          Math.round(dl.temperature_2m_max[i]) + "/" + Math.round(dl.temperature_2m_min[i]) + "℃</span>";
+          Math.round(dl.temperature_2m_max[i]) + "/" + Math.round(dl.temperature_2m_min[i]) + "℃ " +
+          "☂" + Math.round(dl.precipitation_probability_max[i]) + "%</span>";
       }
       document.getElementById("days").innerHTML = html;
       var n = jst();
@@ -123,12 +137,43 @@ function loadWeather() {
   xhr.send();
 }
 
+function esc(s) {
+  return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+// GitHub Actionsが作る data.json（室内センサー・ニュース）を読む
+function loadData() {
+  var xhr = new XMLHttpRequest();
+  xhr.open("GET", "data.json?_=" + Date.now(), true);
+  xhr.onreadystatechange = function () {
+    if (xhr.readyState !== 4 || xhr.status !== 200) return;
+    try {
+      var d = JSON.parse(xhr.responseText);
+      var r = d.room;
+      if (r && r.co2 !== null && r.co2 !== undefined) {
+        document.getElementById("room").innerHTML = "CO2 " + r.co2 + "ppm";
+        document.getElementById("roomDetail").innerHTML =
+          "室温" + r.temperature + "℃ 湿度" + r.humidity + "%";
+      }
+      var html = "";
+      var n = d.news || [];
+      for (var i = 0; i < n.length; i++) {
+        html += '<span class="news">' + esc(n[i]) + "</span>";
+      }
+      document.getElementById("newsList").innerHTML = html;
+    } catch (e) {}
+  };
+  xhr.send();
+}
+
 fit();
 tick();
 loadWeather();
+loadData();
 window.onresize = fit;
 setInterval(tick, 10000);
 setInterval(loadWeather, WEATHER_INTERVAL_MIN * 60 * 1000);
+setInterval(loadData, 10 * 60 * 1000);
 </script>
 </body>
 </html>
