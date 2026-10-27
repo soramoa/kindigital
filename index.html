@@ -27,7 +27,7 @@
 <div id="time">--:--</div>
 
 <div class="box">
-  <div class="label">現在の天気（<span id="place">沖縄</span>）</div>
+  <div class="label">現在の天気（<span id="place">南風原町</span>）</div>
   <div id="now">読み込み中…</div>
   <div id="detail">&nbsp;</div>
 </div>
@@ -52,10 +52,10 @@
 
 <script>
 // ===== 設定 =====
-var LAT = 26.20;   // 緯度（与那原付近）
-var LON = 127.72;  // 経度
+var LAT = 26.19;   // 緯度（南風原町付近）
+var LON = 127.73;  // 経度
 var WEATHER_INTERVAL_MIN = 20; // 天気の更新間隔（分）
-var FIT_DIVISOR = 30;          // 文字サイズの基準（小さくすると全体が大きくなる）
+var FIT_DIVISOR = 35;          // 文字サイズの基準（小さくすると全体が大きくなる）
 // ================
 
 var WEEK = ["日","月","火","水","木","金","土"];
@@ -86,6 +86,17 @@ function wcode(c) {
   return "--";
 }
 
+// 予測モデルが雨系の天気コードを出していても、降水量がほぼ0なら雲量で言い換える
+function relabel(code, mm, limit, cloud) {
+  var wet = (code >= 51 && code <= 57) || (code >= 61 && code <= 67) || (code >= 80 && code <= 82);
+  if (wet && mm < limit) {
+    if (cloud < 25) return "晴れ";
+    if (cloud < 60) return "晴れ時々くもり";
+    return "くもり";
+  }
+  return wcode(code);
+}
+
 var lastMinute = -1;
 function tick() {
   var d = jst();
@@ -98,8 +109,8 @@ function tick() {
 
 function loadWeather() {
   var url = "https://api.open-meteo.com/v1/forecast?latitude=" + LAT + "&longitude=" + LON +
-    "&current=temperature_2m,apparent_temperature,relative_humidity_2m,wind_speed_10m,weather_code" +
-    "&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max" +
+    "&current=temperature_2m,apparent_temperature,relative_humidity_2m,wind_speed_10m,weather_code,precipitation,cloud_cover" +
+    "&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,precipitation_sum,cloud_cover_mean" +
     "&timezone=Asia%2FTokyo&forecast_days=4&wind_speed_unit=ms";
   var xhr = new XMLHttpRequest();
   xhr.open("GET", url, true);
@@ -114,7 +125,7 @@ function loadWeather() {
       var j = JSON.parse(xhr.responseText);
       var c = j.current;
       document.getElementById("now").innerHTML =
-        wcode(c.weather_code) + " " + Math.round(c.temperature_2m) + "℃";
+        relabel(c.weather_code, c.precipitation, 0.1, c.cloud_cover) + " " + Math.round(c.temperature_2m) + "℃";
       document.getElementById("detail").innerHTML =
         "体感" + Math.round(c.apparent_temperature) + "℃ 湿度" + Math.round(c.relative_humidity_2m) +
         "% 風" + Math.round(c.wind_speed_10m) + "m/s";
@@ -124,7 +135,7 @@ function loadWeather() {
         var p = dl.time[i].split("-");
         var wd = new Date(Date.UTC(+p[0], +p[1] - 1, +p[2])).getUTCDay();
         var name = i === 0 ? "今日" : (i === 1 ? "明日" : (+p[1]) + "/" + (+p[2]) + "(" + WEEK[wd] + ")");
-        html += '<span class="day"><b>' + name + "</b>" + wcode(dl.weather_code[i]) + " " +
+        html += '<span class="day"><b>' + name + "</b>" + relabel(dl.weather_code[i], dl.precipitation_sum[i], 0.5, dl.cloud_cover_mean[i]) + " " +
           Math.round(dl.temperature_2m_max[i]) + "/" + Math.round(dl.temperature_2m_min[i]) + "℃ " +
           "☂" + Math.round(dl.precipitation_probability_max[i]) + "%</span>";
       }
