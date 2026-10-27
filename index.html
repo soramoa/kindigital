@@ -2,7 +2,6 @@
 <html lang="ja">
 <head>
 <meta charset="utf-8">
-<meta name="robots" content="noindex">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Kindle Board</title>
 <style>
@@ -16,9 +15,6 @@
   #detail { font-size: 1.2em; }
   .day { display: block; font-size: 1.3em; padding: 0.35em 0; border-bottom: 2px solid #888; }
   .day b { display: inline-block; width: 4.2em; }
-  #room { font-size: 2.2em; font-weight: bold; margin: 0.15em 0; }
-  #roomDetail { font-size: 1.2em; }
-  .news { display: block; font-size: 1em; padding: 0.4em 0; border-bottom: 2px solid #888; }
   #status { font-size: 0.8em; color: #666; margin-top: 1em; }
 </style>
 </head>
@@ -27,15 +23,9 @@
 <div id="time">--:--</div>
 
 <div class="box">
-  <div class="label">現在の天気（<span id="place">南風原町</span>）</div>
+  <div class="label">現在の天気（<span id="place">那覇</span>・気象庁）</div>
   <div id="now">読み込み中…</div>
   <div id="detail">&nbsp;</div>
-</div>
-
-<div class="box">
-  <div class="label">室内</div>
-  <div id="room">--</div>
-  <div id="roomDetail">&nbsp;</div>
 </div>
 
 <div class="box">
@@ -43,58 +33,51 @@
   <div id="days"></div>
 </div>
 
-<div class="box">
-  <div class="label">NHKニュース</div>
-  <div id="newsList"></div>
-</div>
-
 <div id="status"></div>
 
 <script>
 // ===== 設定 =====
-var LAT = 26.19;   // 緯度（南風原町付近）
-var LON = 127.73;  // 経度
-var WEATHER_INTERVAL_MIN = 10; // 天気の更新間隔（分）
-var FIT_DIVISOR = 35;          // 文字サイズの基準（小さくすると全体が大きくなる）
+var OFFICE = "471000";        // 沖縄本島地方
+var AREA = "471010";          // 本島中南部
+var WEEK_AREA = "471000";     // 週間予報の地域
+var TEMP_POINT = "47936";     // 気温予報の地点（那覇）
+var AMEDAS = "91197";         // アメダス観測所（那覇）
+var DAYS_TO_SHOW = 5;         // 表示する日数
+var WEATHER_INTERVAL_MIN = 20; // 更新間隔（分）
+var FIT_DIVISOR = 24;          // 文字サイズの基準（小さくすると全体が大きくなる）
 // ================
 
+var BASE = "https://www.jma.go.jp/bosai/";
 var WEEK = ["日","月","火","水","木","金","土"];
+
+var CODES = {
+  100:"晴れ",101:"晴れ時々くもり",102:"晴れ一時雨",103:"晴れ時々雨",104:"晴れ一時雪",105:"晴れ時々雪",
+  110:"晴れのちくもり",111:"晴れのちくもり",112:"晴れのち一時雨",113:"晴れのち時々雨",114:"晴れのち雨",
+  200:"くもり",201:"くもり時々晴れ",202:"くもり一時雨",203:"くもり時々雨",204:"くもり一時雪",205:"くもり時々雪",
+  210:"くもりのち晴れ",211:"くもりのち晴れ",212:"くもりのち一時雨",213:"くもりのち時々雨",214:"くもりのち雨",
+  300:"雨",301:"雨時々晴れ",302:"雨時々止む",303:"雨時々雪",308:"大雨",311:"雨のち晴れ",313:"雨のちくもり",314:"雨のち雪",
+  400:"雪",401:"雪時々晴れ",402:"雪時々止む",411:"雪のち晴れ",413:"雪のちくもり",414:"雪のち雨"
+};
+
+function codeLabel(c) {
+  c = parseInt(c, 10);
+  if (CODES[c]) return CODES[c];
+  var h = Math.floor(c / 100);
+  if (h === 1) return "晴れ";
+  if (h === 2) return "くもり";
+  if (h === 3) return "雨";
+  if (h === 4) return "雪";
+  return "--";
+}
 
 function pad(n) { return n < 10 ? "0" + n : "" + n; }
 
 // 端末のタイムゾーン設定に関係なく、常に日本時間(JST)で扱う
 function jst() { return new Date(Date.now() + 9 * 3600 * 1000); }
 
-// 画面の幅に合わせて文字サイズを決める
 function fit() {
   var w = document.documentElement.clientWidth || window.innerWidth || 600;
   document.body.style.fontSize = (w / FIT_DIVISOR) + "px";
-}
-
-function wcode(c) {
-  if (c === 0) return "快晴";
-  if (c === 1) return "晴れ";
-  if (c === 2) return "晴れ時々くもり";
-  if (c === 3) return "くもり";
-  if (c === 45 || c === 48) return "霧";
-  if (c >= 51 && c <= 57) return "霧雨";
-  if (c >= 61 && c <= 67) return "雨";
-  if (c >= 71 && c <= 77) return "雪";
-  if (c >= 80 && c <= 82) return "にわか雨";
-  if (c === 85 || c === 86) return "にわか雪";
-  if (c >= 95) return "雷雨";
-  return "--";
-}
-
-// 予測モデルが雨系の天気コードを出していても、降水量がほぼ0なら雲量で言い換える
-function relabel(code, mm, limit, cloud) {
-  var wet = (code >= 51 && code <= 57) || (code >= 61 && code <= 67) || (code >= 80 && code <= 82);
-  if (wet && mm < limit) {
-    if (cloud < 25) return "晴れ";
-    if (cloud < 60) return "晴れ時々くもり";
-    return "くもり";
-  }
-  return wcode(code);
 }
 
 var lastMinute = -1;
@@ -107,85 +90,173 @@ function tick() {
     d.getUTCFullYear() + "年" + (d.getUTCMonth() + 1) + "月" + d.getUTCDate() + "日（" + WEEK[d.getUTCDay()] + "）";
 }
 
-function loadWeather() {
-  var url = "https://api.open-meteo.com/v1/forecast?latitude=" + LAT + "&longitude=" + LON +
-    "&current=temperature_2m,apparent_temperature,relative_humidity_2m,wind_speed_10m,weather_code,precipitation,cloud_cover" +
-    "&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,precipitation_sum,cloud_cover_mean" +
-    "&timezone=Asia%2FTokyo&forecast_days=4&wind_speed_unit=ms";
+function getJSON(url, cb) {
   var xhr = new XMLHttpRequest();
-  xhr.open("GET", url, true);
+  xhr.open("GET", url + (url.indexOf("?") < 0 ? "?" : "&") + "_=" + Date.now(), true);
   xhr.onreadystatechange = function () {
     if (xhr.readyState !== 4) return;
-    var st = document.getElementById("status");
-    if (xhr.status !== 200) {
-      st.innerHTML = "天気の取得に失敗しました（次回再試行）";
-      return;
-    }
+    if (xhr.status !== 200) { cb(true, null); return; }
+    try { cb(false, JSON.parse(xhr.responseText)); }
+    catch (e) { cb(true, null); }
+  };
+  xhr.send();
+}
+
+function findArea(ts, code, key) {
+  for (var i = 0; i < ts.areas.length; i++) {
+    if (ts.areas[i].area.code === code) return ts.areas[i];
+  }
+  return ts.areas[0];
+}
+
+function num(v) {
+  if (v === "" || v === null || v === undefined) return null;
+  var n = parseInt(v, 10);
+  return isNaN(n) ? null : n;
+}
+
+var nowLabel = "";
+var obs = null;
+
+function renderNow() {
+  var t = (obs && obs.temp !== null) ? " " + Math.round(obs.temp) + "℃" : "";
+  document.getElementById("now").innerHTML = (nowLabel || "--") + t;
+  if (obs) {
+    var s = "";
+    if (obs.humidity !== null) s += "湿度" + Math.round(obs.humidity) + "% ";
+    if (obs.wind !== null) s += "風" + Math.round(obs.wind) + "m/s ";
+    if (obs.rain !== null) s += "雨" + obs.rain + "mm/h";
+    document.getElementById("detail").innerHTML = s || "&nbsp;";
+  }
+}
+
+function setStatus(msg) {
+  var n = jst();
+  document.getElementById("status").innerHTML = msg + "（" + pad(n.getUTCHours()) + ":" + pad(n.getUTCMinutes()) + "）　出典：気象庁";
+}
+
+function loadForecast() {
+  getJSON(BASE + "forecast/data/forecast/" + OFFICE + ".json", function (err, j) {
+    if (err) { setStatus("予報の取得に失敗（次回再試行）"); return; }
     try {
-      var j = JSON.parse(xhr.responseText);
-      var c = j.current;
-      document.getElementById("now").innerHTML =
-        relabel(c.weather_code, c.precipitation, 0.1, c.cloud_cover) + " " + Math.round(c.temperature_2m) + "℃";
-      document.getElementById("detail").innerHTML =
-        "体感" + Math.round(c.apparent_temperature) + "℃ 湿度" + Math.round(c.relative_humidity_2m) +
-        "% 風" + Math.round(c.wind_speed_10m) + "m/s";
+      var days = {}, order = [];
+      var get = function (date) {
+        if (!days[date]) { days[date] = {}; order.push(date); }
+        return days[date];
+      };
+      var i, d, date;
+
+      // --- 短期予報（今日〜明後日） ---
+      var s = j[0].timeSeries;
+      var a0 = findArea(s[0], AREA);
+      for (i = 0; i < s[0].timeDefines.length; i++) {
+        get(s[0].timeDefines[i].substr(0, 10)).code = a0.weatherCodes[i];
+      }
+      var a1 = findArea(s[1], AREA);
+      for (i = 0; i < s[1].timeDefines.length; i++) {
+        d = get(s[1].timeDefines[i].substr(0, 10));
+        var p = num(a1.pops[i]);
+        if (p !== null && (d.pop === undefined || p > d.pop)) d.pop = p;
+      }
+      var a2 = findArea(s[2], TEMP_POINT);
+      for (i = 0; i < s[2].timeDefines.length; i++) {
+        var td = s[2].timeDefines[i];
+        d = get(td.substr(0, 10));
+        var v = num(a2.temps[i]);
+        if (v === null) continue;
+        if (td.substr(11, 2) === "00") d.tmin = v; else d.tmax = v;
+      }
+
+      // --- 週間予報（足りない部分を補う） ---
+      if (j[1]) {
+        var w = j[1].timeSeries;
+        var wa = findArea(w[0], WEEK_AREA);
+        for (i = 0; i < w[0].timeDefines.length; i++) {
+          d = get(w[0].timeDefines[i].substr(0, 10));
+          if (d.code === undefined) d.code = wa.weatherCodes[i];
+          var wp = num(wa.pops[i]);
+          if (d.pop === undefined && wp !== null) d.pop = wp;
+        }
+        if (w[1]) {
+          var wt = findArea(w[1], TEMP_POINT);
+          for (i = 0; i < w[1].timeDefines.length; i++) {
+            d = get(w[1].timeDefines[i].substr(0, 10));
+            var mn = num(wt.tempsMin[i]), mx = num(wt.tempsMax[i]);
+            if (d.tmin === undefined && mn !== null) d.tmin = mn;
+            if (d.tmax === undefined && mx !== null) d.tmax = mx;
+          }
+        }
+      }
+
+      order.sort();
       var html = "";
-      var dl = j.daily;
-      for (var i = 0; i < dl.time.length; i++) {
-        var p = dl.time[i].split("-");
-        var wd = new Date(Date.UTC(+p[0], +p[1] - 1, +p[2])).getUTCDay();
-        var name = i === 0 ? "今日" : (i === 1 ? "明日" : (+p[1]) + "/" + (+p[2]) + "(" + WEEK[wd] + ")");
-        html += '<span class="day"><b>' + name + "</b>" + relabel(dl.weather_code[i], dl.precipitation_sum[i], 0.5, dl.cloud_cover_mean[i]) + " " +
-          Math.round(dl.temperature_2m_max[i]) + "/" + Math.round(dl.temperature_2m_min[i]) + "℃ " +
-          "☂" + Math.round(dl.precipitation_probability_max[i]) + "%</span>";
+      for (i = 0; i < order.length && i < DAYS_TO_SHOW; i++) {
+        date = order[i];
+        d = days[date];
+        var pp = date.split("-");
+        var wd = new Date(Date.UTC(+pp[0], +pp[1] - 1, +pp[2])).getUTCDay();
+        var name = i === 0 ? "今日" : (i === 1 ? "明日" : (+pp[1]) + "/" + (+pp[2]) + "(" + WEEK[wd] + ")");
+        var hi = d.tmax !== undefined ? d.tmax : "--";
+        var lo = d.tmin !== undefined ? d.tmin : "--";
+        html += '<span class="day"><b>' + name + "</b>" +
+          (d.code !== undefined ? codeLabel(d.code) : "--") + " " +
+          hi + "/" + lo + "℃ ☂" + (d.pop !== undefined ? d.pop : "--") + "%</span>";
       }
       document.getElementById("days").innerHTML = html;
-      var n = jst();
-      st.innerHTML = "天気 " + pad(n.getUTCHours()) + ":" + pad(n.getUTCMinutes()) + " 更新";
+      if (days[order[0]] && days[order[0]].code !== undefined) {
+        nowLabel = codeLabel(days[order[0]].code);
+        renderNow();
+      }
+      setStatus("予報更新");
     } catch (e) {
-      st.innerHTML = "天気データの読み取りに失敗しました";
+      setStatus("予報データの読み取りに失敗");
     }
-  };
-  xhr.send();
+  });
 }
 
-function esc(s) {
-  return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-}
-
-// GitHub Actionsが作る data.json（室内センサー・ニュース）を読む
-function loadData() {
+function loadObs() {
+  getJSON(BASE + "amedas/data/latest_time.txt", function (err, ignore) {
+    // latest_time.txt はJSONではなくテキストなので別処理
+  });
   var xhr = new XMLHttpRequest();
-  xhr.open("GET", "data.json?_=" + Date.now(), true);
+  xhr.open("GET", BASE + "amedas/data/latest_time.txt?_=" + Date.now(), true);
   xhr.onreadystatechange = function () {
-    if (xhr.readyState !== 4 || xhr.status !== 200) return;
-    try {
-      var d = JSON.parse(xhr.responseText);
-      var r = d.room;
-      if (r && r.co2 !== null && r.co2 !== undefined) {
-        document.getElementById("room").innerHTML = "CO2 " + r.co2 + "ppm";
-        document.getElementById("roomDetail").innerHTML =
-          "室温" + r.temperature + "℃ 湿度" + r.humidity + "%";
+    if (xhr.readyState !== 4) return;
+    if (xhr.status !== 200) { renderNow(); return; }
+    var t = xhr.responseText.replace(/\s/g, ""); // 例: 2026-10-27T12:10:00+09:00
+    var ymd = t.substr(0, 4) + t.substr(5, 2) + t.substr(8, 2);
+    var hh = Math.floor(parseInt(t.substr(11, 2), 10) / 3) * 3;
+    getJSON(BASE + "amedas/data/point/" + AMEDAS + "/" + ymd + "_" + pad(hh) + ".json", function (err2, o) {
+      if (!err2 && o) {
+        var latest = "";
+        for (var k in o) { if (o.hasOwnProperty(k) && k > latest) latest = k; }
+        var r = o[latest];
+        if (r) {
+          obs = {
+            temp: r.temp ? r.temp[0] : null,
+            humidity: r.humidity ? r.humidity[0] : null,
+            wind: r.wind ? r.wind[0] : null,
+            rain: r.precipitation1h ? r.precipitation1h[0] : null
+          };
+        }
       }
-      var html = "";
-      var n = d.news || [];
-      for (var i = 0; i < n.length; i++) {
-        html += '<span class="news">' + esc(n[i]) + "</span>";
-      }
-      document.getElementById("newsList").innerHTML = html;
-    } catch (e) {}
+      renderNow();
+    });
   };
   xhr.send();
+}
+
+function loadWeather() {
+  loadForecast();
+  loadObs();
 }
 
 fit();
 tick();
 loadWeather();
-loadData();
 window.onresize = fit;
 setInterval(tick, 10000);
 setInterval(loadWeather, WEATHER_INTERVAL_MIN * 60 * 1000);
-setInterval(loadData, 10 * 60 * 1000);
 </script>
 </body>
 </html>
