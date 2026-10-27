@@ -6,35 +6,41 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Kindle Board</title>
 <style>
-  html, body { margin: 0; padding: 0; background: #fff; color: #000; overflow-x: hidden; }
-  body { font-family: "Hiragino Kaku Gothic ProN", "Noto Sans CJK JP", sans-serif; font-size: 25px; padding: 0.7em; }
-  #date { font-size: 1.6em; font-weight: bold; }
-  #time { font-size: 7.2em; font-weight: bold; line-height: 1.05; letter-spacing: -0.03em; margin: 0.1em 0 0.3em; white-space: nowrap; }
-  .box { border-top: 0.25em solid #000; padding-top: 0.6em; margin-top: 0.8em; }
-  .label { font-size: 1em; color: #444; }
-  #now { font-size: 2.2em; font-weight: bold; margin: 0.15em 0; }
-  #detail { font-size: 1.2em; }
-  .day { display: block; font-size: 1.3em; padding: 0.35em 0; border-bottom: 2px solid #888; }
-  .day b { display: inline-block; width: 4.2em; }
-  #status { font-size: 0.8em; color: #666; margin-top: 1em; }
+  html, body { margin: 0; padding: 0; background: #fff; color: #000; overflow: hidden; }
+  body { font-family: "Hiragino Kaku Gothic ProN", "Noto Sans CJK JP", sans-serif; font-size: 25px; padding: 0.6em; }
+  .clear { clear: both; }
+  #left { float: left; width: 42%; }
+  #right { float: right; width: 55%; border-left: 0.25em solid #000; padding-left: 0.8em; box-sizing: border-box; -webkit-box-sizing: border-box; }
+  #date { font-size: 1.5em; font-weight: bold; }
+  #time { font-size: 5.5em; font-weight: bold; line-height: 1.05; letter-spacing: -0.03em; margin: 0.1em 0 0.2em; white-space: nowrap; }
+  .box { border-top: 0.25em solid #000; padding-top: 0.5em; margin-top: 0.5em; }
+  .label { font-size: 0.9em; color: #444; }
+  #now { font-size: 2em; font-weight: bold; margin: 0.15em 0; }
+  #detail { font-size: 1em; }
+  .day { display: block; font-size: 1.05em; padding: 0.4em 0; border-bottom: 2px solid #888; }
+  .day b { display: inline-block; width: 3.4em; }
+  #status { font-size: 0.7em; color: #666; margin-top: 0.8em; }
 </style>
 </head>
 <body>
-<div id="date">&nbsp;</div>
-<div id="time">--:--</div>
+<div id="left">
+  <div id="date">&nbsp;</div>
+  <div id="time">--:--</div>
 
-<div class="box">
-  <div class="label">現在の天気（<span id="place">那覇</span>・気象庁）</div>
-  <div id="now">読み込み中…</div>
-  <div id="detail">&nbsp;</div>
+  <div class="box">
+    <div class="label">現在の天気（<span id="place">那覇</span>・気象庁）</div>
+    <div id="now">読み込み中…</div>
+    <div id="detail">&nbsp;</div>
+  </div>
+
+  <div id="status"></div>
 </div>
 
-<div class="box">
+<div id="right">
   <div class="label">これからの天気</div>
   <div id="days"></div>
 </div>
-
-<div id="status"></div>
+<div class="clear"></div>
 
 <script>
 // ===== 設定 =====
@@ -45,7 +51,8 @@ var TEMP_POINT = "47936";     // 気温予報の地点（那覇）
 var AMEDAS = "91197";         // アメダス観測所（那覇）
 var DAYS_TO_SHOW = 5;         // 表示する日数
 var WEATHER_INTERVAL_MIN = 20; // 更新間隔（分）
-var FIT_DIVISOR = 24;          // 文字サイズの基準（小さくすると全体が大きくなる）
+var FIT_W = 35;                // 幅基準の文字サイズ（小さくすると全体が大きくなる）
+var FIT_H = 20;                // 高さ基準の文字サイズ（はみ出す場合は大きくする）
 // ================
 
 var BASE = "https://www.jma.go.jp/bosai/";
@@ -76,9 +83,11 @@ function pad(n) { return n < 10 ? "0" + n : "" + n; }
 // 端末のタイムゾーン設定に関係なく、常に日本時間(JST)で扱う
 function jst() { return new Date(Date.now() + 9 * 3600 * 1000); }
 
+// 幅と高さの両方に収まるよう文字サイズを決める（横画面用）
 function fit() {
-  var w = document.documentElement.clientWidth || window.innerWidth || 600;
-  document.body.style.fontSize = (w / FIT_DIVISOR) + "px";
+  var w = document.documentElement.clientWidth || window.innerWidth || 800;
+  var h = document.documentElement.clientHeight || window.innerHeight || 600;
+  document.body.style.fontSize = Math.min(w / FIT_W, h / FIT_H) + "px";
 }
 
 var lastMinute = -1;
@@ -103,7 +112,7 @@ function getJSON(url, cb) {
   xhr.send();
 }
 
-function findArea(ts, code, key) {
+function findArea(ts, code) {
   for (var i = 0; i < ts.areas.length; i++) {
     if (ts.areas[i].area.code === code) return ts.areas[i];
   }
@@ -216,9 +225,6 @@ function loadForecast() {
 }
 
 function loadObs() {
-  getJSON(BASE + "amedas/data/latest_time.txt", function (err, ignore) {
-    // latest_time.txt はJSONではなくテキストなので別処理
-  });
   var xhr = new XMLHttpRequest();
   xhr.open("GET", BASE + "amedas/data/latest_time.txt?_=" + Date.now(), true);
   xhr.onreadystatechange = function () {
