@@ -5,17 +5,17 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Kindle Board</title>
 <style>
-  html, body { margin: 0; padding: 0; background: #fff; color: #000; }
-  body { font-family: "Hiragino Kaku Gothic ProN", "Noto Sans CJK JP", sans-serif; padding: 30px; }
-  #date { font-size: 44px; font-weight: bold; }
-  #time { font-size: 220px; font-weight: bold; line-height: 1.05; letter-spacing: -4px; margin: 10px 0 30px; }
-  .box { border-top: 6px solid #000; padding-top: 20px; margin-top: 30px; }
-  .label { font-size: 30px; color: #444; }
-  #now { font-size: 64px; font-weight: bold; margin: 8px 0; }
-  #detail { font-size: 38px; }
-  .day { display: block; font-size: 40px; padding: 12px 0; border-bottom: 2px solid #888; }
-  .day b { display: inline-block; width: 220px; }
-  #status { font-size: 24px; color: #666; margin-top: 30px; }
+  html, body { margin: 0; padding: 0; background: #fff; color: #000; overflow-x: hidden; }
+  body { font-family: "Hiragino Kaku Gothic ProN", "Noto Sans CJK JP", sans-serif; font-size: 25px; padding: 0.7em; }
+  #date { font-size: 1.6em; font-weight: bold; }
+  #time { font-size: 7.2em; font-weight: bold; line-height: 1.05; letter-spacing: -0.03em; margin: 0.1em 0 0.3em; white-space: nowrap; }
+  .box { border-top: 0.25em solid #000; padding-top: 0.6em; margin-top: 0.8em; }
+  .label { font-size: 1em; color: #444; }
+  #now { font-size: 2.2em; font-weight: bold; margin: 0.15em 0; }
+  #detail { font-size: 1.2em; }
+  .day { display: block; font-size: 1.3em; padding: 0.35em 0; border-bottom: 2px solid #888; }
+  .day b { display: inline-block; width: 4.2em; }
+  #status { font-size: 0.8em; color: #666; margin-top: 1em; }
 </style>
 </head>
 <body>
@@ -36,15 +36,25 @@
 <div id="status"></div>
 
 <script>
-// ===== 設定（ここだけ変えれば場所を変えられます）=====
+// ===== 設定 =====
 var LAT = 26.20;   // 緯度（与那原付近）
 var LON = 127.72;  // 経度
 var WEATHER_INTERVAL_MIN = 20; // 天気の更新間隔（分）
-// ====================================================
+var FIT_DIVISOR = 24;          // 文字サイズの基準（小さくすると全体が大きくなる）
+// ================
 
 var WEEK = ["日","月","火","水","木","金","土"];
 
 function pad(n) { return n < 10 ? "0" + n : "" + n; }
+
+// 端末のタイムゾーン設定に関係なく、常に日本時間(JST)で扱う
+function jst() { return new Date(Date.now() + 9 * 3600 * 1000); }
+
+// 画面の幅に合わせて文字サイズを決める
+function fit() {
+  var w = document.documentElement.clientWidth || window.innerWidth || 600;
+  document.body.style.fontSize = (w / FIT_DIVISOR) + "px";
+}
 
 function wcode(c) {
   if (c === 0) return "快晴";
@@ -61,15 +71,14 @@ function wcode(c) {
   return "--";
 }
 
-// 分が変わったときだけ書き換える（e-inkの点滅を減らす）
 var lastMinute = -1;
 function tick() {
-  var d = new Date();
-  if (d.getMinutes() === lastMinute) return;
-  lastMinute = d.getMinutes();
-  document.getElementById("time").innerHTML = pad(d.getHours()) + ":" + pad(d.getMinutes());
+  var d = jst();
+  if (d.getUTCMinutes() === lastMinute) return;
+  lastMinute = d.getUTCMinutes();
+  document.getElementById("time").innerHTML = pad(d.getUTCHours()) + ":" + pad(d.getUTCMinutes());
   document.getElementById("date").innerHTML =
-    d.getFullYear() + "年" + (d.getMonth() + 1) + "月" + d.getDate() + "日（" + WEEK[d.getDay()] + "）";
+    d.getUTCFullYear() + "年" + (d.getUTCMonth() + 1) + "月" + d.getUTCDate() + "日（" + WEEK[d.getUTCDay()] + "）";
 }
 
 function loadWeather() {
@@ -90,22 +99,22 @@ function loadWeather() {
       var j = JSON.parse(xhr.responseText);
       var c = j.current;
       document.getElementById("now").innerHTML =
-        wcode(c.weather_code) + "　" + Math.round(c.temperature_2m) + "℃";
+        wcode(c.weather_code) + " " + Math.round(c.temperature_2m) + "℃";
       document.getElementById("detail").innerHTML =
-        "体感 " + Math.round(c.apparent_temperature) + "℃　湿度 " + Math.round(c.relative_humidity_2m) +
-        "%　風 " + Math.round(c.wind_speed_10m) + "m/s";
+        "体感" + Math.round(c.apparent_temperature) + "℃ 湿度" + Math.round(c.relative_humidity_2m) +
+        "% 風" + Math.round(c.wind_speed_10m) + "m/s";
       var html = "";
       var dl = j.daily;
       for (var i = 0; i < dl.time.length; i++) {
         var p = dl.time[i].split("-");
-        var dt = new Date(+p[0], +p[1] - 1, +p[2]);
-        var name = i === 0 ? "今日" : (i === 1 ? "明日" : (+p[1]) + "/" + (+p[2]) + "(" + WEEK[dt.getDay()] + ")");
-        html += '<span class="day"><b>' + name + "</b>" + wcode(dl.weather_code[i]) + "　" +
-          Math.round(dl.temperature_2m_max[i]) + "℃ / " + Math.round(dl.temperature_2m_min[i]) + "℃</span>";
+        var wd = new Date(Date.UTC(+p[0], +p[1] - 1, +p[2])).getUTCDay();
+        var name = i === 0 ? "今日" : (i === 1 ? "明日" : (+p[1]) + "/" + (+p[2]) + "(" + WEEK[wd] + ")");
+        html += '<span class="day"><b>' + name + "</b>" + wcode(dl.weather_code[i]) + " " +
+          Math.round(dl.temperature_2m_max[i]) + "/" + Math.round(dl.temperature_2m_min[i]) + "℃</span>";
       }
       document.getElementById("days").innerHTML = html;
-      var n = new Date();
-      st.innerHTML = "天気 " + pad(n.getHours()) + ":" + pad(n.getMinutes()) + " 更新";
+      var n = jst();
+      st.innerHTML = "天気 " + pad(n.getUTCHours()) + ":" + pad(n.getUTCMinutes()) + " 更新";
     } catch (e) {
       st.innerHTML = "天気データの読み取りに失敗しました";
     }
@@ -113,8 +122,10 @@ function loadWeather() {
   xhr.send();
 }
 
+fit();
 tick();
 loadWeather();
+window.onresize = fit;
 setInterval(tick, 10000);
 setInterval(loadWeather, WEATHER_INTERVAL_MIN * 60 * 1000);
 </script>
